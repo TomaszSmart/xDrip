@@ -95,7 +95,9 @@ public class WidgetDisplayHelper {
                     if (BestGlucose.compensateNoise()) {
                         estimate = BgGraphBuilder.best_bg_estimate;
                         estimated_delta = BgGraphBuilder.best_bg_estimate - BgGraphBuilder.last_bg_estimate;
-                        slopeArrow = BgReading.slopeToArrowSymbol(estimated_delta / (BgGraphBuilder.DEXCOM_PERIOD / 60000));
+                        if (!lastBgReading.hasNativeDexcomTrend()) { // custom build: keep sensor's own trend
+                            slopeArrow = BgReading.slopeToArrowSymbol(estimated_delta / (BgGraphBuilder.DEXCOM_PERIOD / 60000));
+                        }
                         extrastring = " \u26A0";
                     }
                     if (Pref.getBooleanDefaultFalse("display_glucose_from_plugin")

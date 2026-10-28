@@ -3105,7 +3105,8 @@ public class Home extends ActivityWithMenu implements ActivityCompat.OnRequestPe
                 if (BestGlucose.compensateNoise()) {
                     estimate = BgGraphBuilder.best_bg_estimate; // this maybe needs scaling based on noise intensity
                     estimated_delta = BgGraphBuilder.best_bg_estimate - BgGraphBuilder.last_bg_estimate;
-                    slope_arrow = BgReading.slopeToArrowSymbol(estimated_delta / (BgGraphBuilder.DEXCOM_PERIOD / 60000)); // delta by minute
+                    slope_arrow = lastBgReading.hasNativeDexcomTrend() ? dg.delta_arrow // custom build: keep sensor's own trend
+                            : BgReading.slopeToArrowSymbol(estimated_delta / (BgGraphBuilder.DEXCOM_PERIOD / 60000)); // delta by minute
                     currentBgValueText.setTypeface(null, Typeface.ITALIC);
                     extrastring = "\u26A0"; // warning symbol !
 

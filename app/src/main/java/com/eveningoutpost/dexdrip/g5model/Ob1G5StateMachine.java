@@ -1603,12 +1603,19 @@ public class Ob1G5StateMachine {
             final BgReading bgReading = BgReading.bgReadingInsertFromG5(glucose.glucose, rxtimestamp);
             if (bgReading != null) {
                 try {
-                    bgReading.calculated_value_slope = glucose.getTrend() / Constants.MINUTE_IN_MS; // note this is different to the typical calculated slope, (normally delta)
-                    if (bgReading.calculated_value_slope == Double.NaN) {
+                    final Double nativeTrend = glucose.getTrend(); // mg/dL per minute from the transmitter, NaN when invalid
+                    if (nativeTrend == null || Double.isNaN(nativeTrend)) {
+                        // Dexcom shows no arrow in this case - do the same (was "== Double.NaN" which is never true)
+                        bgReading.calculated_value_slope = 0;
                         bgReading.hide_slope = true;
+                    } else {
+                        bgReading.calculated_value_slope = nativeTrend / Constants.MINUTE_IN_MS; // note this is different to the typical calculated slope, (normally delta)
+                        bgReading.hide_slope = false;
+                        bgReading.markNativeTrend();
                     }
+                    bgReading.save(); // persist the native trend - previously it only lived in memory
                 } catch (Exception e) {
-                    // not a good number - does this exception ever actually fire?
+                    UserError.Log.e(TAG, "Could not store native trend: " + e);
                 }
                 if (!FirmwareCapability.isTransmitterRawCapable(getTransmitterID())) {
                     bgReading.noRawWillBeAvailable();
@@ -1953,6 +1960,17 @@ public class Ob1G5StateMachine {
             } else {
                 if (BgReading.getForPreciseTimestamp(time, Constants.MINUTE_IN_MS * 4) == null) {
                     final BgReading bgr = BgReading.bgReadingInsertFromG5(backsie.getGlucose(), time, "Backfill");
+                    if (bgr != null) {
+                        // keep the sensor's own trend for backfilled readings too (int8, 0.1 mg/dL/min, 127 = invalid)
+                        final int t = (byte) backsie.getTrend();
+                        if (t != 127) {
+                            bgr.calculated_value_slope = (t / 10d) / Constants.MINUTE_IN_MS;
+                            bgr.markNativeTrend();
+                        } else {
+                            bgr.hide_slope = true;
+                        }
+                        bgr.save();
+                    }
                     lastGlucoseBgReading = bgr;
                     UserError.Log.d(TAG, "Adding backfilled reading: " + JoH.dateTimeText(time) + " " + BgGraphBuilder.unitized_string_static(backsie.getGlucose()));
                     changed = true;

@@ -4,6 +4,7 @@ import static com.eveningoutpost.dexdrip.evaluators.PersistentHigh.persistentHig
 import static com.eveningoutpost.dexdrip.g5model.Ob1G5StateMachine.shortTxId;
 import static com.eveningoutpost.dexdrip.importedlibraries.dexcom.Dex_Constants.TREND_ARROW_VALUES.NOT_COMPUTABLE;
 import static com.eveningoutpost.dexdrip.importedlibraries.dexcom.Dex_Constants.TREND_ARROW_VALUES.getTrend;
+import com.eveningoutpost.dexdrip.importedlibraries.dexcom.Dex_Constants;
 import static com.eveningoutpost.dexdrip.calibrations.PluggableCalibration.getCalibrationPluginFromPreferences;
 import static com.eveningoutpost.dexdrip.calibrations.PluggableCalibration.newCloseSensorData;
 
@@ -668,6 +669,7 @@ public class BgReading extends Model implements ShareUploadableBg {
     }
 
     public String displaySlopeArrow() {
+        if (hasNativeDexcomTrend()) return slopeArrow(); // custom build
         return slopeToArrowSymbol(this.dg_mgdl > 0 ? this.dg_slope * 60000 : this.calculated_value_slope * 60000);
     }
 
@@ -681,12 +683,58 @@ public class BgReading extends Model implements ShareUploadableBg {
     }
 
     public String slopeArrow() {
+        if (hasNativeDexcomTrend()) {
+            return nativeDexcomTrend(calculated_value_slope * 60000).Symbol();
+        }
         return slopeToArrowSymbol(this.calculated_value_slope * 60000);
     }
 
     public  String slopeName() {
+        if (!hide_slope && hasNativeDexcomTrend()) {
+            return nativeDexcomTrend(calculated_value_slope * 60000).friendlyTrendName();
+        }
         return hide_slope ? NOT_COMPUTABLE.trendName().replace("_", " ") :
             slopeName(calculated_value_slope * 60000);
+    }
+
+    // --- Native Dexcom trend (custom build) ---
+    // When the G6/G7 transmitter is read directly (OB1 collector), calculated_value_slope holds the
+    // rate of change computed by the sensor itself (mg/dL/min, smoothed by Dexcom). With this
+    // preference enabled, arrows are taken from that rate using Dexcom's own arrow thresholds
+    // (1 / 2 / 3 mg/dL/min) instead of xDrip's two-point slope, so they match the Dexcom app.
+
+    public static final String PREF_USE_NATIVE_DEXCOM_TREND = "use_native_dexcom_trend";
+
+    public static boolean useNativeDexcomTrend() {
+        return Pref.getBoolean(PREF_USE_NATIVE_DEXCOM_TREND, true);
+    }
+
+    // Tag added to source_info only by the collectors that store the sensor's own trend in calculated_value_slope
+    public static final String NATIVE_TREND_TAG = "NativeTrend";
+
+    public BgReading markNativeTrend() {
+        return appendSourceInfo(NATIVE_TREND_TAG);
+    }
+
+    // true if this reading carries the trend computed by the Dexcom sensor itself
+    public boolean hasNativeDexcomTrend() {
+        return !hide_slope
+                && source_info != null
+                && source_info.contains(NATIVE_TREND_TAG)
+                && !Double.isNaN(calculated_value_slope)
+                && useNativeDexcomTrend();
+    }
+
+    // Dexcom arrow definitions: Flat |rate| <= 1, 45 deg 1-2, single 2-3, double > 3 mg/dL/min
+    public static Dex_Constants.TREND_ARROW_VALUES nativeDexcomTrend(final double rate_by_minute) {
+        if (Double.isNaN(rate_by_minute)) return NOT_COMPUTABLE;
+        if (rate_by_minute > 3) return Dex_Constants.TREND_ARROW_VALUES.DOUBLE_UP;
+        if (rate_by_minute > 2) return Dex_Constants.TREND_ARROW_VALUES.SINGLE_UP;
+        if (rate_by_minute > 1) return Dex_Constants.TREND_ARROW_VALUES.UP_45;
+        if (rate_by_minute >= -1) return Dex_Constants.TREND_ARROW_VALUES.FLAT;
+        if (rate_by_minute >= -2) return Dex_Constants.TREND_ARROW_VALUES.DOWN_45;
+        if (rate_by_minute >= -3) return Dex_Constants.TREND_ARROW_VALUES.SINGLE_DOWN;
+        return Dex_Constants.TREND_ARROW_VALUES.DOUBLE_DOWN;
     }
 
     public static String slopeName(double slope_by_minute) {

@@ -61,14 +61,21 @@ public class ClassifierAction {
                             final BgReading bgReading = BgReading.bgReadingInsertFromG5(g7EGlucose.glucose, g7EGlucose.timestamp);
                             if (bgReading != null) {
                                 try {
-                                    bgReading.calculated_value_slope = g7EGlucose.getTrend() / Constants.MINUTE_IN_MS; // note this is different to the typical calculated slope, (normally delta)
-                                    if (bgReading.calculated_value_slope == Double.NaN) {
+                                    final Double nativeTrend = g7EGlucose.getTrend(); // mg/dL per minute from the sensor, NaN when invalid
+                                    if (nativeTrend == null || Double.isNaN(nativeTrend)) {
+                                        bgReading.calculated_value_slope = 0;
                                         bgReading.hide_slope = true;
+                                    } else {
+                                        bgReading.calculated_value_slope = nativeTrend / Constants.MINUTE_IN_MS; // note this is different to the typical calculated slope, (normally delta)
+                                        bgReading.markNativeTrend();
                                     }
+                                    bgReading.save(); // custom build: persist the native trend
                                 } catch (Exception e) {
-                                    // not a good number - does this exception ever actually fire?
+                                    UserError.Log.e(TAG, "Could not store native trend: " + e);
                                 }
+                                final boolean hadNativeTrend = bgReading.source_info != null && bgReading.source_info.contains(BgReading.NATIVE_TREND_TAG);
                                 bgReading.source_info = "G7 Native";
+                                if (hadNativeTrend) bgReading.markNativeTrend(); // custom build: keep the native trend marker
                                 bgReading.noRawWillBeAvailable();
                             }
                         } else {
@@ -104,12 +111,17 @@ public class ClassifierAction {
                                 final BgReading bgReading = BgReading.bgReadingInsertFromG5(glucose.glucose, ts);
                                 if (bgReading != null) {
                                     try {
-                                        bgReading.calculated_value_slope = glucose.getTrend() / Constants.MINUTE_IN_MS; // note this is different to the typical calculated slope, (normally delta)
-                                        if (bgReading.calculated_value_slope == Double.NaN) {
+                                        final Double nativeTrend = glucose.getTrend(); // mg/dL per minute from the sensor, NaN when invalid
+                                        if (nativeTrend == null || Double.isNaN(nativeTrend)) {
+                                            bgReading.calculated_value_slope = 0;
                                             bgReading.hide_slope = true;
+                                        } else {
+                                            bgReading.calculated_value_slope = nativeTrend / Constants.MINUTE_IN_MS; // note this is different to the typical calculated slope, (normally delta)
+                                            bgReading.markNativeTrend();
                                         }
+                                        bgReading.save(); // custom build: persist the native trend
                                     } catch (Exception e) {
-                                        // not a good number - does this exception ever actually fire?
+                                        UserError.Log.e(TAG, "Could not store native trend: " + e);
                                     }
                                     bgReading.noRawWillBeAvailable();
                                 }

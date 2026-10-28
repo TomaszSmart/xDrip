@@ -252,6 +252,15 @@ public class BestGlucose {
             Log.d(TAG, "No noise option slope by minute: " + JoH.qs(slope * 60000, 5));
         }
 
+        // Custom build: use the trend computed by the Dexcom sensor itself when available,
+        // so the arrow matches the Dexcom app. The displayed delta stays the real difference.
+        if (lastBgReading.hasNativeDexcomTrend()) {
+            dg.slope = lastBgReading.calculated_value_slope;
+            slope_arrow = lastBgReading.slopeArrow();
+            slope_name = lastBgReading.slopeName();
+            Log.d(TAG, "Using native Dexcom trend: " + JoH.qs(dg.slope * 60000, 2) + " mg/dL/min -> " + slope_name);
+        }
+
         // TODO bit more work on deltas etc needed here
         if (bg_from_filtered) {
             estimate = filtered;
