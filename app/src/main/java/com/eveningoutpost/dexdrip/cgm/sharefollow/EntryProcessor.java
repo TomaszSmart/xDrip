@@ -52,6 +52,12 @@ public class EntryProcessor {
                             final Double slope = entry.slopePerMsFromDirection();
                             if (slope != null) {
                                 bg.calculated_value_slope = slope; // this is made up but should match arrow
+                                // custom build: Dexcom computed this arrow, store a mid-band rate so it is shown as is
+                                final Double nativeSlope = BgReading.slopePerMsFromDexcomArrow(entry.Trend.trendName());
+                                if (nativeSlope != null) {
+                                    bg.calculated_value_slope = nativeSlope;
+                                    bg.markNativeTrend();
+                                }
                             } else {
                                 bg.hide_slope = true;
                             }

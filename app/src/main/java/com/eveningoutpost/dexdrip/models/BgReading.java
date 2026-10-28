@@ -737,6 +737,23 @@ public class BgReading extends Model implements ShareUploadableBg {
         return Dex_Constants.TREND_ARROW_VALUES.DOUBLE_DOWN;
     }
 
+    // Representative mg/dL/min inside each Dexcom arrow band, for arrows received as text (Share follow)
+    public static Double slopePerMsFromDexcomArrow(final String name) {
+        if (name == null) return null;
+        final double by_minute;
+        switch (name) {
+            case "DoubleDown": by_minute = -3.5; break;
+            case "SingleDown": by_minute = -2.5; break;
+            case "FortyFiveDown": by_minute = -1.5; break;
+            case "Flat": by_minute = 0; break;
+            case "FortyFiveUp": by_minute = 1.5; break;
+            case "SingleUp": by_minute = 2.5; break;
+            case "DoubleUp": by_minute = 3.5; break;
+            default: return null;
+        }
+        return by_minute / 60000;
+    }
+
     public static String slopeName(double slope_by_minute) {
         return getTrend(slope_by_minute).friendlyTrendName();
     }
