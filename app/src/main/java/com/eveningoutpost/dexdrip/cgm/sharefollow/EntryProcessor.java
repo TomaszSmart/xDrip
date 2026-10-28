@@ -49,14 +49,14 @@ public class EntryProcessor {
                             bg.raw_data = SPECIAL_FOLLOWER_PLACEHOLDER;
                             bg.filtered_data = entry.Value;
 
+                            Double nativeShareSlope = null;
                             final Double slope = entry.slopePerMsFromDirection();
                             if (slope != null) {
                                 bg.calculated_value_slope = slope; // this is made up but should match arrow
                                 // custom build: Dexcom computed this arrow, store a mid-band rate so it is shown as is
-                                final Double nativeSlope = BgReading.slopePerMsFromDexcomArrow(entry.Trend.trendName());
-                                if (nativeSlope != null) {
-                                    bg.calculated_value_slope = nativeSlope;
-                                    bg.markNativeTrend();
+                                nativeShareSlope = BgReading.slopePerMsFromDexcomArrow(entry.Trend.trendName());
+                                if (nativeShareSlope != null) {
+                                    bg.calculated_value_slope = nativeShareSlope;
                                 }
                             } else {
                                 bg.hide_slope = true;
@@ -65,6 +65,7 @@ public class EntryProcessor {
                             bg.sensor = sensor;
                             bg.sensor_uuid = sensor.uuid;
                             bg.source_info = "Share Follow";
+                            if (nativeShareSlope != null) bg.markNativeTrend(); // after source_info is set, it would overwrite the tag
                             bg.save();
                             Inevitable.task("entry-proc-post-pr", 500, () -> bg.postProcess(false));
                         }
