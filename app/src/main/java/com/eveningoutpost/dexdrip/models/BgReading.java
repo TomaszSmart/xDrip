@@ -1273,6 +1273,11 @@ public class BgReading extends Model implements ShareUploadableBg {
     }
 
     public static synchronized BgReading bgReadingInsertFromGluPro(double calculated_value, final long timestamp, String sourceInfoAppend) {
+        return bgReadingInsertFromGluPro(calculated_value, timestamp, sourceInfoAppend, null);
+    }
+
+    // trend_by_minute: mg/dL per minute computed by the sensor, null when not available
+    public static synchronized BgReading bgReadingInsertFromGluPro(double calculated_value, final long timestamp, String sourceInfoAppend, final Double trend_by_minute) {
 
         final Sensor sensor = Sensor.currentSensor();
         if (sensor == null) {
@@ -1314,6 +1319,10 @@ public class BgReading extends Model implements ShareUploadableBg {
 
             if (sourceInfoAppend != null && !sourceInfoAppend.isEmpty()) {
                 bgr.appendSourceInfo(sourceInfoAppend);
+            }
+            if (trend_by_minute != null) {
+                bgr.calculated_value_slope = trend_by_minute / Constants.MINUTE_IN_MS; // sensor's own trend, same unit as the OB1 path
+                bgr.markNativeTrend();
             }
             bgr.save();
             if (JoH.ratelimit("sync wakelock", 15)) {

@@ -107,6 +107,17 @@ public class GluProService extends ForegroundService {
     // last requested backfill
     static volatile Pair<Long, Long> lastBackfill = new Pair<>(-1L, -1L);
 
+    // custom build: trend from the CGM measurement in mg/dL per minute, null when the device did not send one
+    private static Double parseTrend(final String trend) {
+        if (trend == null) return null;
+        try {
+            final double value = Double.parseDouble(trend);
+            return Double.isNaN(value) || Double.isInfinite(value) ? null : value;
+        } catch (NumberFormatException e) {
+            return null; // "null" when the measurement has no trend field
+        }
+    }
+
     // callback listener
     private final Listener listener = new Listener() {
         @Override
@@ -146,7 +157,7 @@ public class GluProService extends ForegroundService {
                 if (timestamp != lastTimestamp) {
                     lastTimestamp = timestamp;
                     try {
-                        val reading = BgReading.bgReadingInsertFromGluPro(Double.parseDouble(data.get(MGDL)), timestamp, "GluPro");
+                        val reading = BgReading.bgReadingInsertFromGluPro(Double.parseDouble(data.get(MGDL)), timestamp, "GluPro", parseTrend(data.get(TREND)));
 
                         if (reading != null && reading.timestamp == timestamp) {
                             // new record was created
