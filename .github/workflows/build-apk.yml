@@ -11,9 +11,7 @@ name: Build signed xDrip APK
 # Always sign with the SAME keystore, otherwise Android will refuse to update the installed app.
 
 on:
-  workflow_dispatch:
-  push:
-    branches: [ native-dexcom-trend ]
+  workflow_dispatch:   # push trigger removed: use build-apk-drive.yml for automatic builds (this one publishes a public Release)
 
 jobs:
   build:

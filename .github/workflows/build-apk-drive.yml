@@ -1,0 +1,111 @@
+name: Build signed xDrip APK (Drive)
+
+# Builds the prod release APK and signs it with your own keystore.
+# Run it manually or by pushing to the branch below. The signed APK is uploaded to the owner's Google Drive
+# (secret GDRIVE_OAUTH2) and is NOT published on the public Releases page. Without that secret it is kept
+# for 1 day as a workflow artifact. The old workflow that publishes a Release is build-apk.yml (manual only).
+#
+# Required repository secrets (Settings -> Secrets and variables -> Actions):
+#   KEYSTORE_BASE64    base64 of your .jks file   (PowerShell: [Convert]::ToBase64String([IO.File]::ReadAllBytes("xdrip.jks")) | Set-Clipboard)
+#   KEYSTORE_PASSWORD  keystore password
+#   KEY_ALIAS          key alias
+#   KEY_PASSWORD       key password
+# Always sign with the SAME keystore, otherwise Android will refuse to update the installed app.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ native-dexcom-trend ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      HAS_GDRIVE: ${{ secrets.GDRIVE_OAUTH2 != '' }}
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: temurin
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build prod release (unsigned)
+        run: ./gradlew :app:assembleProdRelease --stacktrace
+
+      - name: Sign APK
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::Secret KEYSTORE_BASE64 is missing - see the header of this workflow file"
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          BT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+          IN=app/build/outputs/apk/prod/release/app-prod-release-unsigned.apk
+          OUT="xDrip-native-dexcom-trend-$(date +%Y%m%d)-${GITHUB_SHA::7}.apk"
+          "$BT/zipalign" -p -f 4 "$IN" aligned.apk
+          "$BT/apksigner" sign --ks "$RUNNER_TEMP/release.jks" \
+            --ks-pass env:KEYSTORE_PASSWORD --ks-key-alias "$KEY_ALIAS" --key-pass env:KEY_PASSWORD \
+            --out "$OUT" aligned.apk
+          "$BT/apksigner" verify --print-certs "$OUT"
+          rm -f "$RUNNER_TEMP/release.jks"
+          echo "APK_NAME=$OUT" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=build-$(date +%Y%m%d-%H%M)-${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      - name: Upload signed APK to Google Drive
+        if: ${{ env.HAS_GDRIVE == 'true' }}
+        env:
+          GDRIVE_OAUTH2: ${{ secrets.GDRIVE_OAUTH2 }}
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          DECODED=$(printf '%s' "$GDRIVE_OAUTH2" | base64 -d) || fail "GDRIVE_OAUTH2 is not valid base64"
+          CLIENT_ID=$(printf '%s' "$DECODED" | cut -d'|' -f1)
+          REFRESH_TOKEN=$(printf '%s' "$DECODED" | cut -d'|' -f2)
+          echo "::add-mask::$CLIENT_ID"; echo "::add-mask::$REFRESH_TOKEN"
+          TOKEN_RESPONSE=$(curl -s -X POST https://oauth2.googleapis.com/token             -d client_id="$CLIENT_ID" -d refresh_token="$REFRESH_TOKEN" -d grant_type=refresh_token)
+          ACCESS_TOKEN=$(echo "$TOKEN_RESPONSE" | jq -r .access_token)
+          [ -n "$ACCESS_TOKEN" ] && [ "$ACCESS_TOKEN" != "null" ] || fail "Could not get a Google access token (is GDRIVE_OAUTH2 still valid?)"
+          echo "::add-mask::$ACCESS_TOKEN"
+
+          find_or_create_folder() {
+            NAME=$1; PARENT=$2
+            Q="name='${NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+            [ -n "$PARENT" ] && Q="$Q and '${PARENT}' in parents"
+            ID=$(curl -s -G -H "Authorization: Bearer $ACCESS_TOKEN"               --data-urlencode "q=$Q" "https://www.googleapis.com/drive/v3/files" | jq -r '.files[0].id')
+            if [ -z "$ID" ] || [ "$ID" = "null" ]; then
+              if [ -n "$PARENT" ]; then BODY="{\"name\":\"$NAME\",\"mimeType\":\"application/vnd.google-apps.folder\",\"parents\":[\"$PARENT\"]}"
+              else BODY="{\"name\":\"$NAME\",\"mimeType\":\"application/vnd.google-apps.folder\"}"; fi
+              ID=$(curl -s -X POST -H "Authorization: Bearer $ACCESS_TOKEN" -H "Content-Type: application/json"                 -d "$BODY" "https://www.googleapis.com/drive/v3/files" | jq -r '.id')
+            fi
+            echo "$ID"
+          }
+
+          ROOT_ID=$(find_or_create_folder "xDrip" "")
+          [ -n "$ROOT_ID" ] && [ "$ROOT_ID" != "null" ] || fail "Could not find or create the xDrip folder on Drive"
+          FOLDER_ID=$(find_or_create_folder "fork-builds" "$ROOT_ID")
+          [ -n "$FOLDER_ID" ] && [ "$FOLDER_ID" != "null" ] || fail "Could not create the fork-builds folder on Drive"
+
+          HTTP_CODE=$(curl -s -o /tmp/gdrive_response.json -w "%{http_code}" -X POST             -H "Authorization: Bearer $ACCESS_TOKEN"             -F "metadata={\"name\":\"$APK_NAME\", \"parents\":[\"$FOLDER_ID\"]};type=application/json;charset=UTF-8"             -F "file=@$APK_NAME;type=application/vnd.android.package-archive"             "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart")
+          if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "201" ]; then
+            fail "Drive upload failed, HTTP $HTTP_CODE"
+          fi
+          echo "Uploaded $APK_NAME to Google Drive: xDrip/fork-builds"
+
+      # Fallback when GDRIVE_OAUTH2 is not set in this repository: keep the APK for 1 day only.
+      - uses: actions/upload-artifact@v4
+        if: ${{ env.HAS_GDRIVE != 'true' }}
+        with:
+          name: ${{ env.APK_NAME }}
+          path: ${{ env.APK_NAME }}
+          retention-days: 1
