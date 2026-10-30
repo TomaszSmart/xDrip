@@ -65,10 +65,38 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          cat > "$RUNNER_TEMP/notes.md" <<EOF
+          ## xDrip+ with the Dexcom trend arrow (built for Dexcom G7)
+
+          An unofficial build of [xDrip+](https://github.com/NightscoutFoundation/xDrip) made for the **Dexcom G7**.
+          It changes one thing: the trend arrow shows what the Dexcom G7 reports, instead of the arrow xDrip+
+          calculates itself from the last two readings (which often disagrees with the Dexcom app, for example
+          45 degrees up while Dexcom shows flat).
+
+          ### What it does
+          - **Dexcom Share follow:** the arrow received from Dexcom Share is shown as it is (Flat, 45 up, Single up, ...).
+          - **G7 connected directly to xDrip+:** the trend sent by the sensor is used, with the same thresholds as Dexcom.
+          - **G7 through a SmartGuide / GluPro bridge:** the trend reported by the bridge is used.
+          - The same arrow is used on the home screen, the widget and the data sent to other apps such as AAPS.
+          - Everything else is the unchanged xDrip+ code (alarms, graphs, calibration and so on).
+
+          ### Tested
+          Share follow was checked on a phone against the Dexcom app. The direct G7 connection and the bridge
+          are implemented but have not yet been confirmed with a live sensor.
+
+          ### Important
+          - **Experimental and unofficial. Use at your own risk.** It is not a medical device, it is not reviewed or
+            supported by the xDrip+ developers or by Dexcom, and it must not be the only basis for treatment decisions.
+          - It uses the same app id as the official xDrip+ but a different signature, so it cannot be installed over the
+            official app (and the other way round) without uninstalling it first. Export your settings and data before that.
+          - Bugs of this build are not the xDrip+ team's responsibility: please report them in this repository only.
+
+          Built from branch \`${GITHUB_REF_NAME}\`, commit ${GITHUB_SHA}. Source is in this repository (GPLv3, same as xDrip+).
+          EOF
           gh release create "$RELEASE_TAG" "$APK_NAME" \
             --target "$GITHUB_SHA" \
-            --title "xDrip native Dexcom trend $(date +%Y-%m-%d) (${GITHUB_SHA::7})" \
-            --notes "Signed build from branch ${GITHUB_REF_NAME}, commit ${GITHUB_SHA}." \
+            --title "xDrip+ with Dexcom trend arrow (G7) $(date +%Y-%m-%d) (${GITHUB_SHA::7})" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
             --latest
 
       - uses: actions/upload-artifact@v4
